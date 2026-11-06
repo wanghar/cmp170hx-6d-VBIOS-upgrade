@@ -78,8 +78,8 @@ correctable/uncorrectable **0/0**、**Xid 0**、功耗 245–251 W、温度 59�
 ## 4. 快速开始
 
 ```bash
-git clone https://github.com/<you>/cmp170hx-6d-upgrade.git
-cd cmp170hx-6d-upgrade
+git clone https://github.com/wanghar/cmp170hx-6d-VBIOS-upgrade.git
+cd cmp170hx-6d-VBIOS-upgrade
 
 # 0) 检查环境（不修改系统）
 sudo bash scripts/00-check-host.sh

@@ -42,8 +42,8 @@ correctable/uncorrectable **0/0**、**Xid 0**、功耗 245–251 W、温度 59�
 ## 2. 原理：三层各自独立、可分别回滚
 
 1. **驱动解锁（cmpunlocker，14 个内核补丁）**
-   去掉固件/OTP 对 CMP 170HX 的限制：SM 频率解锁、显存几何解锁（8 GB SKU → 64 GB、
-   10 GB SKU → 128 GB）、ECC、PCIe Gen2、持久化 SW state 等。这是**驱动侧**改动，
+   去掉固件/OTP 对 CMP 170HX 的限制：SM 频率解锁、显存几何解锁（8 GB SKU → 64 GB）、
+   ECC、PCIe Gen2、持久化 SW state 等。这是**驱动侧**改动，
    不碰 VBIOS。
 
 2. **VBIOS 内存覆盖（nvidia-linux-vbios-vix-loader）**
@@ -66,7 +66,8 @@ correctable/uncorrectable **0/0**、**Xid 0**、功耗 245–251 W、温度 59�
 
 ## 3. 环境要求
 
-- NVIDIA CMP 170HX（原厂 67 VBIOS），`10de:20c2`（8 GB）或 `10de:2082`（10 GB）
+- NVIDIA CMP 170HX（原厂 67 VBIOS）：**仅 8 GB SKU**，`10de:20c2`
+  （整套流程只在这一个 SKU 上实测过，其它 SKU 未测试）
 - Linux 发行版，x86_64，Secure Boot 关闭（或自签模块签名）
 - 内核头文件：`/usr/src/linux-headers-$(uname -r)`（Debian/Ubuntu：`linux-headers-$(uname -r)`）
 - **NVIDIA 615.71.09 open kernel modules**（`--kernel-module-type=open`）
@@ -133,7 +134,7 @@ sudo bash scripts/99-verify.sh
 ## 6. 验证清单（`scripts/99-verify.sh` 会逐项打印）
 
 - [ ] `nvidia-smi` 显示 `92.00.6D.00.0A`
-- [ ] 显存 64 GB（8 GB SKU）/ 128 GB（10 GB SKU）
+- [ ] 显存 64 GB（8 GB SKU）
 - [ ] 功耗：当前 250 W，上限 300 W（`nvidia-smi -q -d POWER`）
 - [ ] `clocks.max.sm` = 1695 MHz
 - [ ] `clocks.current.memory` = 1728（NDIV=64）或 1890（NDIV=70）

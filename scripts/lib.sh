@@ -40,4 +40,3 @@ gpu_bdf() {
     echo "${b#00000000:}"
 }
 
-docker_or_bare() { :; }

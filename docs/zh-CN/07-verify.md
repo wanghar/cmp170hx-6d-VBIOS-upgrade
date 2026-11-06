@@ -16,7 +16,7 @@ nvidia-smi --query-gpu=name,driver_version,vbios_version,memory.total,power.limi
 |---|---|
 | `driver_version` | 615.71.09 |
 | `vbios_version` | **92.00.6D.00.0A** |
-| `memory.total` | 65536 MiB（8 GB SKU）/ 131072 MiB（10 GB SKU） |
+| `memory.total` | 65536 MiB（8 GB SKU，唯一实测过的 SKU） |
 | `power.limit` | **250 W**（默认，符合“开机不自动上 300W”的要求） |
 | `power.max_limit` | **300 W** |
 | `clocks.max.sm` | **1695 MHz** |

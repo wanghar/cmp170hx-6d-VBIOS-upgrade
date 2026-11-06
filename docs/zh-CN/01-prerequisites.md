@@ -4,12 +4,11 @@
 
 ## 硬件
 
-- NVIDIA CMP 170HX（GA100）
-  - 8 GB SKU：PCI `10de:20c2`，subsystem `10de:1585`
-  - 10 GB SKU：PCI `10de:2082`
+- NVIDIA CMP 170HX（GA100），**仅 8 GB SKU**：PCI `10de:20c2`，subsystem `10de:1585`
+  - 整套流程只在这一个 SKU 上实测过；其它 SKU 未测试，不在本仓库范围内。
 - 主板 PCIe 槽位：本机为 **电气 x4**（Z440 slot 2），Gen2 下上限 ~1.7 GB/s；
   想要更高带宽需要 x8/x16 槽位。
-- 显卡必须能正常工作、`nvidia-smi` 能识别（包括原厂 8/10 GB 模式）。
+- 显卡必须能正常工作、`nvidia-smi` 能识别（原厂 8 GB 模式）。
 
 ## 系统
 

@@ -10,7 +10,6 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     GPU="${GPU#00000000:}"
 fi
 [[ -n "${GPU}" ]] || GPU="$(lspci -D -d 10de:20c2: 2>/dev/null | head -1 | awk '{print $1}' | sed 's/^0000://')"
-[[ -n "${GPU}" ]] || GPU="$(lspci -D -d 10de:2082: 2>/dev/null | head -1 | awk '{print $1}' | sed 's/^0000://')"
 [[ -n "${GPU}" ]] || { echo "no CMP 170HX found"; exit 0; }
 
 GPU_PATH="/sys/bus/pci/devices/0000:${GPU}"

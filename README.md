@@ -43,7 +43,7 @@ temperature 59–63 °C.
 
 1. **Driver unlock (cmpunlocker, 14 kernel patches)**
    Removes the firmware/OTP restrictions of the CMP 170HX: SM clock unlock, framebuffer geometry
-   unlock (8 GB SKU → 64 GB, 10 GB SKU → 128 GB), ECC, PCIe Gen2, persistent SW state, etc.
+   unlock (8 GB SKU → 64 GB), ECC, PCIe Gen2, persistent SW state, etc.
    Purely driver-side; the VBIOS is untouched.
 
 2. **In-memory VBIOS override (nvidia-linux-vbios-vix-loader)**
@@ -68,7 +68,8 @@ temperature 59–63 °C.
 
 ## 3. Requirements
 
-- NVIDIA CMP 170HX with the stock 67 VBIOS, `10de:20c2` (8 GB) or `10de:2082` (10 GB)
+- NVIDIA CMP 170HX with the stock 67 VBIOS: **8 GB SKU only**, `10de:20c2`
+  (this is the only SKU verified with this guide; other SKUs were not tested)
 - x86_64 Linux, Secure Boot off (or a self-signed module key)
 - Kernel headers: `/usr/src/linux-headers-$(uname -r)`
 - **NVIDIA 615.71.09 open kernel modules** (`--kernel-module-type=open`)
@@ -136,7 +137,7 @@ Full commands, expected outputs and pitfalls live in `docs/en/` (Chinese origina
 ## 6. Verification checklist (`scripts/99-verify.sh` prints each item)
 
 - [ ] `nvidia-smi` reports `92.00.6D.00.0A`
-- [ ] 64 GB framebuffer (8 GB SKU) / 128 GB (10 GB SKU)
+- [ ] 64 GB framebuffer (8 GB SKU)
 - [ ] Power: 250 W current, 300 W max (`nvidia-smi -q -d POWER`)
 - [ ] `clocks.max.sm` = 1695 MHz
 - [ ] `clocks.current.memory` = 1728 (NDIV=64) or 1890 (NDIV=70)

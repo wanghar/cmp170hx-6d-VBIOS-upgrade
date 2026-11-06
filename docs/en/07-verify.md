@@ -16,7 +16,7 @@ Expected:
 |---|---|
 | `driver_version` | 615.71.09 |
 | `vbios_version` | **92.00.6D.00.0A** |
-| `memory.total` | 65536 MiB (8 GB SKU) / 131072 MiB (10 GB SKU) |
+| `memory.total` | 65536 MiB (8 GB SKU, the only verified SKU) |
 | `power.limit` | **250 W** (default, meeting the "does not automatically go to 300W at boot" requirement) |
 | `power.max_limit` | **300 W** |
 | `clocks.max.sm` | **1695 MHz** |

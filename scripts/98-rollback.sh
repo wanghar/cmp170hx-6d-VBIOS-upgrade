@@ -25,7 +25,7 @@ case "${MODE}" in
         rm -f  "${RETRAIN_UNIT}" "${RETRAIN_BIN}"
         systemctl daemon-reload >/dev/null 2>&1 || true
         depmod -a "${KVER}"
-        ok "rolled back to the stock driver (8/10 GB, 250 W)"
+        ok "rolled back to the stock driver (8 GB, 250 W)"
         ;;
     *)
         die "usage: $0 --mclk | --vbios | --all"

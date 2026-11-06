@@ -4,12 +4,12 @@
 
 ## Hardware
 
-- NVIDIA CMP 170HX (GA100)
-  - 8 GB SKU: PCI `10de:20c2`, subsystem `10de:1585`
-  - 10 GB SKU: PCI `10de:2082`
+- NVIDIA CMP 170HX (GA100), **8 GB SKU only**: PCI `10de:20c2`, subsystem `10de:1585`
+  - Only this SKU was used to verify the whole procedure. Other SKUs were not tested and are
+    out of scope for this repository.
 - Motherboard PCIe slot: this machine has **electrical x4** (Z440 slot 2), capped at ~1.7 GB/s under Gen2;
   higher bandwidth requires an x8/x16 slot.
-- The card must work properly and be detected by `nvidia-smi` (including the stock 8/10 GB mode).
+- The card must work properly and be detected by `nvidia-smi` (in the stock 8 GB mode).
 
 ## System
 

@@ -1,5 +1,7 @@
 # 05 — HBM 显存超频（FBPA PLL NDIV）
 
+[English](../en/05-hbm-clock.md) | **简体中文**
+
 ## 1. 原理
 
 CMP 170HX 的 HBM 时钟来自 **FBPA PLL**：

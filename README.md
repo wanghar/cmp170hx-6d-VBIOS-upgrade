@@ -1,239 +1,253 @@
-# CMP 170HX：67 → 6D（300 W）升级 + 64 GB 解锁 + HBM 1728/1890 MHz（不刷 EEPROM）
+# CMP 170HX: 67 → 6D (300 W) upgrade, 64 GB unlock, HBM at 1728/1890 MHz — without flashing the EEPROM
 
-在 Linux 上把 NVIDIA CMP 170HX（GA100）从原厂 `92.00.67.00.01`（250 W）升级成
-`92.00.6D.00.0A`（300 W 上限）的等效状态，保留驱动侧解锁，并把 HBM 时钟从 1458 MHz
-提到 1728 MHz（= 6D 原厂同频）或更高，**全程不写 EEPROM、不碰 nvflash**，随时可回滚。
+**English** | [简体中文](README.zh-CN.md)
 
-> English TL;DR: this repo reproduces a CMP 170HX upgrade to the 300 W `92.00.6D.00.0A`
-> VBIOS behaviour, 64 GB framebuffer and a raised HBM clock (FBPA PLL NDIV), entirely in
-> driver/firmware memory — the card's flash chip is never written.
+Upgrade an NVIDIA CMP 170HX (GA100) on Linux from the stock `92.00.67.00.01` (250 W) VBIOS
+behaviour to the `92.00.6D.00.0A` (300 W cap) behaviour, keep the driver-side unlock, and raise
+the HBM clock from 1458 MHz to 1728 MHz (the 6D stock clock) or higher — **without writing the
+EEPROM and without nvflash**, with a staged rollback at every layer.
+
+> 中文版见 [README.zh-CN.md](README.zh-CN.md)。
 
 ---
 
-## 1. 本机实测结果
+## 1. Measured results
 
-同一台机器、同一张卡（8 GB SKU，`10de:20c2`），不同阶段跑同一 benchmark
-（`scripts/99-verify.sh` 里的 `nvidia_bench`，512 MiB 缓冲区，128 B stride）：
+Same machine, same card (8 GB SKU, `10de:20c2`), same benchmark at each stage
+(`nvidia_bench`, 512 MiB buffers, 128 B stride, run from `scripts/99-verify.sh`):
 
-| 项目 | 原厂 67（250 W） | 本方案：6D + NDIV=64 | 本方案：6D + NDIV=70 | 参考卡：原生刷 6D（1728） |
+| Item | Stock 67 (250 W) | This repo: 6D + NDIV=64 | This repo: 6D + NDIV=70 | Reference card: natively flashed 6D (1728) |
 |---|---|---|---|---|
 | VBIOS | 92.00.67.00.01 | 92.00.6D.00.0A | 92.00.6D.00.0A | 92.00.6D.00.0A |
-| 显存容量 | 64 GB（解锁后） | 64 GB | 64 GB | 64 GB |
-| 功耗上限 | 250 W | 250 W 默认 / 300 W 上限 | 250 W 默认 / 300 W 上限 | 250 W 默认 / 300 W 上限 |
-| SM 上限 | 1410 MHz | 1695 MHz | 1695 MHz | 1482 MHz（实测满载） |
-| 显存时钟 | 1458 MHz | **1728 MHz** | **1890 MHz** | 1728 MHz |
+| Framebuffer | 64 GB (after unlock) | 64 GB | 64 GB | 64 GB |
+| Power limit | 250 W | 250 W default / 300 W max | 250 W default / 300 W max | 250 W default / 300 W max |
+| SM clock cap | 1410 MHz | 1695 MHz | 1695 MHz | 1482 MHz (measured under load) |
+| Memory clock | 1458 MHz | **1728 MHz** | **1890 MHz** | 1728 MHz |
 | Theoretical BW | 1493 GB/s | 1769 GB/s | 1935 GB/s | 1769 GB/s |
-| Global Read | 1377 GB/s | ≈1670 GB/s（预计） | **1825 GB/s** | 1675 GB/s |
+| Global Read | 1377 GB/s | ≈1670 GB/s (expected) | **1825 GB/s** | 1675 GB/s |
 | Global Write | 1359 GB/s | — | 1297 GB/s | 1285 GB/s |
 | Global Copy | 1220 GB/s | — | **1623 GB/s** | 1447 GB/s |
 | Global Triad | 1289 GB/s | — | **1740 GB/s** | 1582 GB/s |
 | cudaMemcpy D2D | — | — | **1756 GB/s** | 1583 GB/s |
-| 内存延迟 | — | — | **352.9 ns** | 364.8 ns |
+| Memory latency | — | — | **352.9 ns** | 364.8 ns |
 | FP32 / BF16 | — | — | 13.92 / 210.91 TFLOPS | 13.78 / 208.79 TFLOPS |
-| PCIe | Gen2 x4（槽位限制） | Gen2 x4 | Gen2 x4 | Gen2 x4 |
+| PCIe | Gen2 x4 (slot-limited) | Gen2 x4 | Gen2 x4 | Gen2 x4 |
 
-稳定性（NDIV=70 那一档实测）：重复 fp16 matmul **9499 次 0 错误**、DRAM ECC
-correctable/uncorrectable **0/0**、**Xid 0**、功耗 245–251 W、温度 59–63 °C。
-
----
-
-## 2. 原理：三层各自独立、可分别回滚
-
-1. **驱动解锁（cmpunlocker，14 个内核补丁）**
-   去掉固件/OTP 对 CMP 170HX 的限制：SM 频率解锁、显存几何解锁（8 GB SKU → 64 GB、
-   10 GB SKU → 128 GB）、ECC、PCIe Gen2、持久化 SW state 等。这是**驱动侧**改动，
-   不碰 VBIOS。
-
-2. **VBIOS 内存覆盖（nvidia-linux-vbios-vix-loader）**
-   让 GSP 固件在启动时用我们提供的 6D 镜像（而不是 EEPROM 里的 67），从而获得
-   300 W 功耗表、1695 MHz 的 SM 频率表。镜像只暂存在内存里，**EEPROM 永远不动**。
-   - GSP 固件只接受**单链 legacy 镜像**（一个 55AA + PCIR，校验和为 0），
-     且**暂存大小 ≤ 512 KiB**（超过会静默回落到 EEPROM 里的 VBIOS）。
-   - 因此 payload = 6D ROM 的 bank1（文件偏移 0x0–0x60000，393216 字节）。
-
-3. **HBM 时钟（FBPA PLL NDIV，post-GSP 路径）**
-   HBM 时钟 = FBPA PLL 的 `NDIV × 27 MHz`。原厂 67 VBIOS 训练在 NDIV=54（1458 MHz），
-   6D 训练在 NDIV=64（1728 MHz）。驱动在 GSP 启动后改写 FBPA PLL 的 COEFF：
-   多播写 `0x0098BC98` + PRI fence `0x001211FC` + 轮询 `0x00903C90` bit5 锁定，
-   即可让显存真正跑在新频率上（实测 `lock=1`）。
-   - **只有 post-GSP 路径有效**：pre-GSP 路径单独跑时寄存器写进去了、NVML 也读得到
-     新 NDIV，但内存控制器仍按训练速率工作，带宽卡在 ~1387 GB/s（详见
-     `docs/09-experiment-log.md`）。
+Stability at NDIV=70: a repeated fp16 matmul compared bit-for-bit over **9499 iterations gave
+0 mismatches**, DRAM ECC correctable/uncorrectable **0/0**, **Xid 0**, power 245–251 W,
+temperature 59–63 °C.
 
 ---
 
-## 3. 环境要求
+## 2. How it works: three independent layers
 
-- NVIDIA CMP 170HX（原厂 67 VBIOS），`10de:20c2`（8 GB）或 `10de:2082`（10 GB）
-- Linux 发行版，x86_64，Secure Boot 关闭（或自签模块签名）
-- 内核头文件：`/usr/src/linux-headers-$(uname -r)`（Debian/Ubuntu：`linux-headers-$(uname -r)`）
-- **NVIDIA 615.71.09 open kernel modules**（`--kernel-module-type=open`）
-- `build-essential`、`git`、`curl`、`python3`、`python3-yaml`、`patch`
-- 6D VBIOS dump：`268495.rom`
-  （来源：TechPowerUp VBIOS 数据库，`92.00.6D.00.0A`，md5 `a58aae86e72b13d50603c15653350664`）
-  ——出于版权原因，本仓库不附带 ROM 文件，请自行获取并核对 md5。
+1. **Driver unlock (cmpunlocker, 14 kernel patches)**
+   Removes the firmware/OTP restrictions of the CMP 170HX: SM clock unlock, framebuffer geometry
+   unlock (8 GB SKU → 64 GB, 10 GB SKU → 128 GB), ECC, PCIe Gen2, persistent SW state, etc.
+   Purely driver-side; the VBIOS is untouched.
+
+2. **In-memory VBIOS override (nvidia-linux-vbios-vix-loader)**
+   Lets the GSP firmware boot from a VBIOS image we supply (the 6D one) instead of the EEPROM's 67,
+   which brings the 300 W power table and the 1695 MHz SM clock table. The image lives in memory
+   only; **the EEPROM is never written**.
+   - The GSP firmware accepts only a **single-chain legacy image** (one `55AA` + `PCIR`, checksum 0)
+     and stages at most **512 KiB** (anything larger silently falls back to the EEPROM VBIOS).
+   - Hence the payload is bank 0 of the 6D dump (file offset 0x0–0x60000, 393216 bytes).
+
+3. **HBM clock (FBPA PLL NDIV, post-GSP path)**
+   The HBM clock is `NDIV × 27 MHz` of the FBPA PLL. The stock 67 VBIOS trains at NDIV=54
+   (1458 MHz); the 6D trains at NDIV=64 (1728 MHz). After the GSP is up, the driver rewrites the
+   FBPA PLL COEFF registers: a multicast write to `0x0098BC98` plus a PRI fence at `0x001211FC`,
+   then polling `0x00903C90` bit 5 for lock. The memory then really runs at the new clock
+   (measured `lock=1`).
+   - **Only the post-GSP path works.** With the pre-GSP path alone the registers hold the new NDIV
+     and NVML reports it, but the memory controller keeps its trained rate and bandwidth stays
+     pinned at ~1387 GB/s (see `docs/en/09-experiment-log.md`).
 
 ---
 
-## 4. 快速开始
+## 3. Requirements
+
+- NVIDIA CMP 170HX with the stock 67 VBIOS, `10de:20c2` (8 GB) or `10de:2082` (10 GB)
+- x86_64 Linux, Secure Boot off (or a self-signed module key)
+- Kernel headers: `/usr/src/linux-headers-$(uname -r)`
+- **NVIDIA 615.71.09 open kernel modules** (`--kernel-module-type=open`)
+- `build-essential`, `git`, `curl`, `python3`, `python3-yaml`, `patch`
+- A 6D VBIOS dump: `268495.rom` (TechPowerUp VBIOS database, `92.00.6D.00.0A`,
+  md5 `a58aae86e72b13d50603c15653350664`) — for copyright reasons this repository does not ship
+  the ROM; obtain it yourself and verify the md5.
+
+---
+
+## 4. Quick start
 
 ```bash
 git clone https://github.com/wanghar/cmp170hx-6d-VBIOS-upgrade.git
 cd cmp170hx-6d-VBIOS-upgrade
 
-# 0) 检查环境（不修改系统）
+# 0) environment check (read-only)
 sudo bash scripts/00-check-host.sh
 
-# 1) 安装 615.71.09 open 驱动（已安装可跳过）
+# 1) install the 615.71.09 open driver (skip if already installed)
 sudo bash scripts/01-driver.sh /path/to/NVIDIA-Linux-x86_64-615.71.09.run
 
-# 2) 构建合并模块（cmpunlocker 解锁 + vix-loader 覆盖 + 本仓库补丁）
+# 2) build the merged module (cmpunlocker unlock + vix-loader override + local patches)
 sudo bash scripts/02-build.sh
 
-# 3) 用你的 6D ROM 生成并安装 payload（会自动校验 legacy 镜像与大小）
-sudo bash scripts/03-payload.sh /path/to/268495.rom
+# 3) build and install the payload from your 6D ROM (validates the legacy image and size)
+sudo bash scripts/03-payload.sh /path/to/268495.rom --install
 
-# 4) 安装模块 + 配置 registry（HBM NDIV 默认 64 = 1728 MHz）
+# 4) install modules and registry keys (HBM NDIV defaults to 64 = 1728 MHz)
 sudo bash scripts/04-install.sh --ndiv 64
 
-# 5) 可选：PCIe Gen2 根端口重训（开机自动，见 docs/06-pcie-gen2.md）
+# 5) optional: PCIe Gen2 root-port retrain at boot (see docs/en/06-pcie-gen2.md)
 sudo bash scripts/05-pcie-gen2.sh
 
-# 6) 重启（本仓库脚本从不自动重启）
+# 6) reboot (none of the scripts ever reboots for you)
 sudo reboot
 
-# 7) 验证
+# 7) verify
 sudo bash scripts/99-verify.sh
 ```
 
-想试更高显存频率（1890 MHz）：`sudo bash scripts/06-set-mclk.sh 70` 再重启。
+To try a higher memory clock (1890 MHz): `sudo bash scripts/06-set-mclk.sh 70`, then reboot.
 
 ---
 
-## 5. 手动步骤（与脚本等价，便于逐步核查）
+## 5. Manual route (equivalent to the scripts)
 
-完整命令、预期输出和坑都写在 `docs/` 里，按顺序读：
+Full commands, expected outputs and pitfalls live in `docs/en/` (Chinese originals in
+`docs/zh-CN/`), read in order:
 
-| 文档 | 内容 |
+| Document | Content |
 |---|---|
-| `docs/01-prerequisites.md` | 硬件/驱动/内核准备，`nvidia-smi` 基线 |
-| `docs/02-driver-upgrade.md` | 610 → 615.71.09 open 驱动安装 |
-| `docs/03-merged-module.md` | cmpunlocker 14 补丁 + vix-loader 覆盖 + 本仓库 2 个补丁 + 编译 |
-| `docs/04-vbios-payload.md` | 6D ROM → 单链 legacy payload（bank1，512 KiB 上限） |
-| `docs/05-hbm-clock.md` | FBPA PLL NDIV、post-GSP 路径、NDIV 选值、稳定性验证 |
-| `docs/06-pcie-gen2.md` | Gen2 解锁后为什么仍是 x4 Gen1：根端口重训（关键坑） |
-| `docs/07-verify.md` | 验证清单与每项预期输出 |
-| `docs/08-rollback.md` | 分阶段回滚（只退 HBM / 只退 VBIOS / 全退） |
-| `docs/09-experiment-log.md` | 全部实验记录（含失败的路线，避免踩坑） |
+| `docs/en/01-prerequisites.md` | Hardware/driver/kernel preparation, `nvidia-smi` baseline |
+| `docs/en/02-driver-upgrade.md` | Install the 615.71.09 open driver |
+| `docs/en/03-merged-module.md` | cmpunlocker's 14 patches + the vix-loader override + the 2 local patches, then build |
+| `docs/en/04-vbios-payload.md` | 6D ROM → single-chain legacy payload (bank 0, 512 KiB cap) |
+| `docs/en/05-hbm-clock.md` | FBPA PLL NDIV, post-GSP path, NDIV selection, stability testing |
+| `docs/en/06-pcie-gen2.md` | Why Gen2 unlocked still runs at x4 Gen1, and the root-port retrain |
+| `docs/en/07-verify.md` | Verification checklist with expected outputs |
+| `docs/en/08-rollback.md` | Staged rollback (HBM only / VBIOS only / everything) |
+| `docs/en/09-experiment-log.md` | All measurements, including the dead ends |
 
 ---
 
-## 6. 验证清单（`scripts/99-verify.sh` 会逐项打印）
+## 6. Verification checklist (`scripts/99-verify.sh` prints each item)
 
-- [ ] `nvidia-smi` 显示 `92.00.6D.00.0A`
-- [ ] 显存 64 GB（8 GB SKU）/ 128 GB（10 GB SKU）
-- [ ] 功耗：当前 250 W，上限 300 W（`nvidia-smi -q -d POWER`）
+- [ ] `nvidia-smi` reports `92.00.6D.00.0A`
+- [ ] 64 GB framebuffer (8 GB SKU) / 128 GB (10 GB SKU)
+- [ ] Power: 250 W current, 300 W max (`nvidia-smi -q -d POWER`)
 - [ ] `clocks.max.sm` = 1695 MHz
-- [ ] `clocks.current.memory` = 1728（NDIV=64）或 1890（NDIV=70）
-- [ ] dmesg 有 `vbios_override: GPU ... selected: 369152 bytes from offset 0x5e00 staged for GSP`
-- [ ] dmesg 有 `HBMPLL_OC: post-GSP POST: ... lock=1`
-- [ ] `nvidia-smi -q -d ECC` 里 DRAM Correctable/Uncorrectable 全 0，dmesg 无 Xid
-- [ ] (`lspci -vv -s <BDF>` / `nvidia-smi --query-gpu=pcie.link.gen.current`) Gen2 x4（如槽位支持）
-- [ ] 跑一次 60 s 以上的持续负载，温度/功耗正常
+- [ ] `clocks.current.memory` = 1728 (NDIV=64) or 1890 (NDIV=70)
+- [ ] dmesg has `vbios_override: GPU ... selected: 369152 bytes from offset 0x5e00 staged for GSP`
+- [ ] dmesg has `HBMPLL_OC: post-GSP POST: ... lock=1`
+- [ ] `nvidia-smi -q -d ECC` shows DRAM Correctable/Uncorrectable all 0, dmesg has no Xid
+- [ ] Gen2 x4 where the slot supports it (`nvidia-smi --query-gpu=pcie.link.gen.current`)
+- [ ] At least 60 s of sustained load with sane power and temperature
 
 ---
 
-## 7. NDIV 选值表（8 GB 卡实测/上游经验）
+## 7. NDIV selection (8 GB cards)
 
-| NDIV | 显存 | 说明 |
+| NDIV | Memory clock | Notes |
 |---|---|---|
-| 54 | 1458 | 原厂 67 训练值 |
-| 64 | 1728 | **6D 原厂同频，推荐“真 6D”** |
-| 70 | 1890 | 上游称约 60% 的 8 GB 卡可稳；本卡实测稳定（0 ECC / 0 Xid） |
-| 73 | 1971 | 上游称“体质好的卡”才行 |
-| 30 | 810 | 降频，用于排查/降压 |
+| 54 | 1458 | Stock 67 trained value |
+| 64 | 1728 | **6D stock clock, recommended for a "true 6D"** |
+| 70 | 1890 | Upstream reports ~60% of 8 GB cards handle it; stable on this card (0 ECC, 0 Xid) |
+| 73 | 1971 | Upstream: only good samples |
+| 30 | 810 | Downclock, for troubleshooting |
 
-> 每一档都要跑 `scripts/99-verify.sh` 里的稳定性测试：重复 matmul 结果逐位一致、
-> ECC 0/0、Xid 0。不稳定就降一档。
+> Validate every step with the stability test in `scripts/99-verify.sh`: repeated matmul results
+> must be bit-identical, ECC 0/0, Xid 0. Step down one notch if unstable.
 
 ---
 
-## 8. 回滚（任选一层）
+## 8. Rollback (any layer)
 
 ```bash
-# 只退 HBM 超频（回到 1458/1728，模块保留）
-sudo bash scripts/06-set-mclk.sh 54     # 或 --off
+# drop only the HBM overclock (back to the trained clock, module kept)
+sudo bash scripts/06-set-mclk.sh 54     # or --off
 
-# 只退 VBIOS 覆盖（回到 EEPROM 的 67 表；64 GB 解锁仍保留）
+# drop only the VBIOS override (back to the EEPROM 67 tables; the 64 GB unlock stays)
 sudo bash scripts/98-rollback.sh --vbios
 
-# 全退（回到 stock 615 驱动、8 GB、250 W）
+# drop everything (back to the stock 615 driver, 8 GB, 250 W)
 sudo bash scripts/98-rollback.sh --all
 ```
 
-之后 `sudo reboot`。**在 Xorg 起不来的情况下**：`Ctrl+Alt+F3` 进控制台执行
-`sudo bash scripts/98-rollback.sh --all && sudo reboot`。
+Then `sudo reboot`. **If Xorg does not come up**: `Ctrl+Alt+F3` for a text console,
+`sudo bash scripts/98-rollback.sh --all && sudo reboot`.
 
 ---
 
-## 9. 已知限制与结论
+## 9. Known limits and findings
 
-- **GSP 覆盖镜像硬上限 512 KiB（暂存字节数）**。超了就静默回落 EEPROM VBIOS，
-  主机侧仍打印 `staged`（驱动只确认暂存，不确认固件接受）。所以 6D ROM 的尾部
-  （BBX/InfoROM @0xC2000 起）永远送不进去，但**显存频率不靠镜像**，靠第 3 层的 PLL 路径。
-- **两版 VBIOS 的 strap/board-config 区（0x41D40–0x41D70 vs 0x41F40–0x41F70）逐字节相同**
-  → 显存频率差异不是 strap 造成的。
-- **pre-GSP 路径单独无效**（寄存器写了但带宽不变）；**必须 post-GSP**（多播 + PRI fence）。
-- **PCIe Gen2**：cmpunlocker 的补丁只重训 GPU 端，**必须同时重训根端口**，否则仍跑
-  Gen1（带宽 1.63/1.68 GB/s vs 0.81/0.84 GB/s）。`scripts/05-pcie-gen2.sh` 会装一个
-  开机自动重训的服务。
-- GSP 固件日志在本机不可用（安装包无 `gsp_log_*.bin`）。
-- 本卡 PCIe 插槽电气 x4，Gen2 下 ~1.7 GB/s 已是上限；要更高需 x8/x16 插槽。
+- **Hard cap of the GSP override image: 512 KiB of staged bytes.** Above that the firmware silently
+  falls back to the EEPROM VBIOS while the host still logs `staged` (the driver only confirms
+  staging, not acceptance). So the 6D dump's tail (BBX/InfoROM from 0xC2000 on) can never be
+  delivered — but **the memory clock does not depend on the image**; layer 3 handles it.
+- **The strap/board-config region of both VBIOS builds (0x41D40–0x41D70 vs 0x41F40–0x41F70) is
+  byte-identical**, so the memory clock difference is not a strap setting.
+- **The pre-GSP path alone is ineffective** (registers written, bandwidth unchanged); **the post-GSP
+  path (multicast + PRI fence) is required**.
+- **PCIe Gen2**: the cmpunlocker patch retrains only the GPU end, so **the root port must be
+  retrained too**, otherwise the link stays Gen1 (1.63/1.68 GB/s vs 0.81/0.84 GB/s). A boot-time
+  service is installed by `scripts/05-pcie-gen2.sh`.
+- GSP firmware logs are unavailable on this machine (the driver package ships no `gsp_log_*.bin`).
+- The card's PCIe slot is electrically x4: at Gen2 roughly 1.7 GB/s is the ceiling; more needs an
+  x8/x16 slot.
 
 ---
 
-## 10. 目录结构
+## 10. Repository layout
 
 ```
-cmp170hx-6d-upgrade/
-├── README.md
-├── docs/                     # 逐步操作文档
-├── scripts/                  # 可执行脚本（不自动重启）
+cmp170hx-6d-VBIOS-upgrade/
+├── README.md                 # English (default)
+├── README.zh-CN.md           # Chinese
+├── docs/
+│   ├── en/                   # step-by-step guides (English)
+│   └── zh-CN/                # step-by-step guides (Chinese)
+├── scripts/                  # executable scripts (never reboot on their own)
+│   ├── lib.sh
 │   ├── 00-check-host.sh
 │   ├── 01-driver.sh
 │   ├── 02-build.sh
+│   ├── 03-make-payload.py    # payload builder (validation + bank 0 only)
 │   ├── 03-payload.sh
-│   ├── 03-make-payload.py    # payload 生成器（校验 + 只取 bank1）
 │   ├── 04-install.sh
 │   ├── 05-pcie-gen2.sh
 │   ├── 06-set-mclk.sh
 │   ├── 98-rollback.sh
 │   └── 99-verify.sh
-├── patches/                  # 相对上游 vix-loader / cmpunlocker 的本地补丁
+├── patches/                  # local patches on top of upstream
 │   ├── 0001-vix-loader-accept-first-legacy-image.patch
 │   └── 0002-hbm-pll-ndiv-overclock.patch
-└── config/                   # modprobe / systemd 模板
+└── config/                   # modprobe / systemd templates
 ```
 
 ---
 
-## 11. 来源与致谢
+## 11. Sources and credits
 
-- [amoghmunikote/cmpunlocker](https://github.com/amoghmunikote/cmpunlocker) —— 驱动解锁
-- [Panchovix/nvidia-linux-vbios-vix-loader](https://github.com/Panchovix/nvidia-linux-vbios-vix-loader) ——
-  VBIOS 内存覆盖（含 @pantsoftime 的 `vbios_override` 原始补丁）
-- [asm64-hooligan/cmpunlocker](https://github.com/asm64-hooligan/cmpunlocker/tree/mem_overclock) ——
-  HBM 时钟（FBPA PLL NDIV）思路与寄存器常量
-- [promisezackr/cmp170hx-ga100-300w-vbios](https://github.com/promisezackr/cmp170hx-ga100-300w-vbios) ——
-  300 W VBIOS 资料
-- TechPowerUp VBIOS Database —— `92.00.6D.00.0A` dump 来源
+- [amoghmunikote/cmpunlocker](https://github.com/amoghmunikote/cmpunlocker) — driver unlock
+- [Panchovix/nvidia-linux-vbios-vix-loader](https://github.com/Panchovix/nvidia-linux-vbios-vix-loader) —
+  in-memory VBIOS override (built on @pantsoftime's original `vbios_override` patch)
+- [asm64-hooligan/cmpunlocker](https://github.com/asm64-hooligan/cmpunlocker/tree/mem_overclock) —
+  HBM clock (FBPA PLL NDIV) approach and register constants
+- [promisezackr/cmp170hx-ga100-300w-vbios](https://github.com/promisezackr/cmp170hx-ga100-300w-vbios) —
+  300 W VBIOS material
+- TechPowerUp VBIOS Database — source of the `92.00.6D.00.0A` dump
 
-本仓库只包含我们自己的补丁、脚本与文档；不含 NVIDIA 专有源码或 VBIOS 二进制。
+This repository contains only our own patches, scripts and documentation; no NVIDIA proprietary
+source or VBIOS binary is included.
 
 ---
 
-## 12. 免责声明
+## 12. Disclaimer
 
-修改显卡固件行为（功耗上限、频率、显存几何）有风险：可能不稳定、报错、损坏数据甚至
-硬件损伤。请自行评估并保留回滚手段。本仓库的所有改动都在**内存/驱动层**，EEPROM
-不写、nvflash 不用；但**不要**在未备份的情况下自行刷写 VBIOS。
+Changing GPU firmware behaviour (power limits, clocks, framebuffer geometry) is risky: instability,
+errors, data corruption and hardware damage are possible. Evaluate the risk yourself and keep a
+rollback path. Every change here is in memory or in the driver — the EEPROM is not written and
+nvflash is not used — but **do not** flash a VBIOS without a backup.

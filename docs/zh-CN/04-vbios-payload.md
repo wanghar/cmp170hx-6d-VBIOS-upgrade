@@ -1,5 +1,7 @@
 # 04 — 6D ROM → VBIOS 覆盖 payload
 
+[English](../en/04-vbios-payload.md) | **简体中文**
+
 ## 1. payload 是什么
 
 vix-loader 的机制：驱动在 GSP 启动前把一段镜像交给固件，固件用它代替 EEPROM 里的
@@ -95,6 +97,6 @@ nvidia-smi --query-gpu=vbios_version,power.max_limit,clocks.max.sm --format=csv
 
 ## 6. 512 KiB 上限的实验证据
 
-`docs/09-experiment-log.md` 有完整表格：369152 ✓、373248 ✓、434688 ✓、499712 ✓、
+`09-experiment-log.md` 有完整表格：369152 ✓、373248 ✓、434688 ✓、499712 ✓、
 **524288 ✓**、541696 ✗、631296 ✗、762368 ✗、1020416 ✗ —— 拒绝只由大小决定，
 与内容无关。

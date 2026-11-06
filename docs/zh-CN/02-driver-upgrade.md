@@ -1,5 +1,7 @@
 # 02 — 安装 NVIDIA 615.71.09（open kernel modules）
 
+[English](../en/02-driver-upgrade.md) | **简体中文**
+
 cmpunlocker 的 615 补丁针对 **615.71.09** 的 open 模块源码。
 
 ## 1. 为什么必须 open 模块
@@ -34,4 +36,4 @@ ls /lib/modules/$(uname -r)/kernel/drivers/video/             # nvidia*.ko
 - **旧驱动残留** → 先 `sudo ./NVIDIA-Linux-x86_64-<old>.run --uninstall` 再装新版。
 - **DKMS** 与 `.run` 混用会互相覆盖，统一用 `.run`。
 
-> 升级完成后先确认 `nvidia-smi` 正常，再进入 `docs/03-merged-module.md`。
+> 升级完成后先确认 `nvidia-smi` 正常，再进入 `03-merged-module.md`。

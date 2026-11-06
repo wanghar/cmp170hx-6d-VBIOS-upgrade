@@ -1,5 +1,7 @@
 # 09 — 实验记录（含失败路线，避免重复踩坑）
 
+[English](../en/09-experiment-log.md) | **简体中文**
+
 记录本机（CMP 170HX 8 GB SKU，`10de:20c2`）全部实测。
 
 ## 1. VBIOS 覆盖镜像大小扫描

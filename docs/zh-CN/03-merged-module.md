@@ -1,5 +1,7 @@
 # 03 — 构建合并模块（解锁 + VBIOS 覆盖 + HBM 时钟）
 
+[English](../en/03-merged-module.md) | **简体中文**
+
 目标产物：一个 `nvidia.ko`，同时包含
 
 1. cmpunlocker 的 14 个解锁补丁（显存几何、SM 频率、ECC、Gen2…）

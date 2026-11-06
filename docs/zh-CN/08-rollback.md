@@ -1,5 +1,7 @@
 # 08 — 回滚
 
+[English](../en/08-rollback.md) | **简体中文**
+
 三层改动互相独立，可以只退其中一层。
 
 ## 1. 只退 HBM 超频
@@ -20,7 +22,7 @@ sudo reboot
 ```
 
 做法：把 `/lib/firmware/nvidia/615.71.09/vbios-override/vbios.bin` 换成原厂镜像
-（`stock-loader.bin`，本仓库提供生成方式见 `docs/04`）并把
+（`stock-loader.bin`，本仓库提供生成方式见 `04-vbios-payload.md`）并把
 `RmLinuxVbiosOverrideSize` 改回对应值；或直接把 `RmLinuxVbiosOverride` 键删掉。
 
 结果：VBIOS 回到 `92.00.67.00.01`、功耗上限 250 W、SM 上限 1410 MHz；

@@ -1,5 +1,7 @@
 # 01 — 环境准备与基线
 
+[English](../en/01-prerequisites.md) | **简体中文**
+
 ## 硬件
 
 - NVIDIA CMP 170HX（GA100）

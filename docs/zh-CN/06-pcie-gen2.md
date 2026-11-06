@@ -1,5 +1,7 @@
 # 06 — PCIe Gen2 解锁（含根端口重训这个坑）
 
+[English](../en/06-pcie-gen2.md) | **简体中文**
+
 ## 1. 现象
 
 cmpunlocker 打完 `pcie-gen2` 补丁后，`nvidia-smi` 显示 Gen2 已启用，但实际链路仍跑

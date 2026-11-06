@@ -1,5 +1,7 @@
 # 07 — 验证清单
 
+[English](../en/07-verify.md) | **简体中文**
+
 重启后按顺序检查。`sudo bash scripts/99-verify.sh` 会一次性跑完并打印结果。
 
 ## A. 基础身份
@@ -32,7 +34,7 @@ sudo dmesg | grep -i "vbios_override"
 NVRM: vbios_override: GPU 0000:02:00 selected: 369152 bytes from offset 0x5e00 staged for GSP
 ```
 
-若 VBIOS 仍是 `92.00.67.00.01`：说明固件回落了，见 `docs/04-vbios-payload.md` 排查表。
+若 VBIOS 仍是 `92.00.67.00.01`：说明固件回落了，见 `04-vbios-payload.md` 排查表。
 
 ## C. HBM 时钟真正生效
 
@@ -82,7 +84,7 @@ nvidia-smi --query-gpu=pcie.link.gen.current,pcie.link.width.current --format=cs
 sudo lspci -vv -s 02:00.0 | grep LnkSta
 ```
 
-预期：Gen2 x4（若插槽为 x4）。若显示 Gen1，按 `docs/06-pcie-gen2.md` 重训根端口。
+预期：Gen2 x4（若插槽为 x4）。若显示 Gen1，按 `06-pcie-gen2.md` 重训根端口。
 
 ## G. 功耗/温度
 

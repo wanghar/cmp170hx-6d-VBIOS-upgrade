@@ -10,6 +10,9 @@
 - Motherboard PCIe slot: this machine has **electrical x4** (Z440 slot 2), capped at ~1.7 GB/s under Gen2;
   higher bandwidth requires an x8/x16 slot.
 - The card must work properly and be detected by `nvidia-smi` (in the stock 8 GB mode).
+- The card must work properly and be detected by `nvidia-smi` (in the stock 8 GB mode).
+- Multiple cards: the procedure is per card. The scripts enumerate all GPUs, but a multi-card system
+  was **not verified** with this guide — validate every card on its own.
 
 ## System
 

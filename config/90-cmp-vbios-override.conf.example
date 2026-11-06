@@ -7,3 +7,7 @@
 #   RmHbmPllNdiv=<30..80>             HBM FBPA PLL NDIV (54=1458, 64=1728, 70=1890 MHz)
 options nvidia NVreg_RegistryDwordsPerDevice="pci=0000:02:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;RmHbmPllNdiv=64"
 options nvidia NVreg_RegistryBinaryFilePerDevice="pci=0000:02:00.0;RmLinuxVbiosOverrideImage=615.71.09/vbios-override/vbios.bin"
+
+# Multiple cards: repeat one pci=<BDF>;... scope per GPU inside each parameter, e.g.
+#   ...DwordsPerDevice="pci=0000:02:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;RmHbmPllNdiv=64;pci=0000:03:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;RmHbmPllNdiv=64"
+# Each parameter is limited to 4094 bytes.

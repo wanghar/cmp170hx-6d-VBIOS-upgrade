@@ -69,7 +69,10 @@ options nvidia NVreg_RegistryBinaryFilePerDevice="pci=0000:02:00.0;RmLinuxVbiosO
 - `RmLinuxVbiosOverride=2` 是必须的 mode 值（1 = 关闭，2 = 启用）
 - `RmLinuxVbiosOverrideSize` 必须等于文件字节数
 - `RmLinuxVbiosOverrideImage` 是相对 `/lib/firmware/nvidia/` 的路径
-- 多卡时用 `pci=...;pci=...` 重复键值
+- 多卡时，每张卡都要在同一个值里拥有自己的 `pci=` 作用域，例如
+  `pci=0000:02:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;pci=0000:03:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216`
+- 每个注册表参数上限 **4094 字节**（打过补丁的模块）。同型号的卡可以共用同一个 payload 文件；
+  board configuration 不同的卡必须用该卡自己的 dump 单独生成 payload。- 多卡时用 `pci=...;pci=...` 重复键值
 
 ## 5. 验证是否被接受
 

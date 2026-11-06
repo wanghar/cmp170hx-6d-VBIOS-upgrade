@@ -69,6 +69,10 @@ sudo dmesg | grep HBMPLL_OC | tail -3
 ```
 
 ## 5. NDIV 选值（8 GB 卡）
+多卡时该键必须出现在每个 `pci=` 作用域里，`scripts/06-set-mclk.sh` 会自动处理。稳定性要
+**逐卡验证**：不同卡体质不同，可能需要不同的 NDIV 值。
+
+
 
 | NDIV | 显存 | 建议 |
 |---|---|---|

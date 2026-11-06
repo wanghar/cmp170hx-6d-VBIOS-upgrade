@@ -71,7 +71,11 @@ options nvidia NVreg_RegistryBinaryFilePerDevice="pci=0000:02:00.0;RmLinuxVbiosO
 - `RmLinuxVbiosOverride=2` is the required mode value (1 = off, 2 = on)
 - `RmLinuxVbiosOverrideSize` must equal the file's byte count
 - `RmLinuxVbiosOverrideImage` is a path relative to `/lib/firmware/nvidia/`
-- With multiple GPUs, repeat the key/value pairs as `pci=...;pci=...`
+- With multiple GPUs, give every card its own `pci=` scope inside the same value, e.g.
+  `pci=0000:02:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;pci=0000:03:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216`
+- Each registry parameter is limited to **4094 bytes** (patched module). Identical cards can share the
+  same payload file; a card with a different board configuration needs its own payload built from its
+  own dump.- With multiple GPUs, repeat the key/value pairs as `pci=...;pci=...`
 
 ## 5. Verify acceptance
 

@@ -33,10 +33,18 @@ driver_version() {
 fw_dir() { echo "/lib/firmware/nvidia/${1:-$(driver_version)}/vbios-override"; }
 
 # nvidia-smi reports e.g. 00000000:02:00.0 -> pci= form 0000:02:00.0
-gpu_bdf() {
+gpu_bdfs() {
     local b
-    b="$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')"
-    [[ -n "${b}" ]] || { echo "${BDF:-0000:02:00.0}"; return; }
-    echo "${b#00000000:}"
+    b="$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader 2>/dev/null | tr -d ' ')"
+    if [[ -z "${b}" ]]; then
+        echo "${BDF:-0000:02:00.0}"
+        return
+    fi
+    while IFS= read -r line; do echo "${line#00000000:}"; done <<< "${b}"
 }
+
+gpu_bdf() { gpu_bdfs | head -1; }
+
+# per-device registry parameters are limited to 4094 bytes each (patched module)
+REGISTRY_MAX_BYTES=4094
 

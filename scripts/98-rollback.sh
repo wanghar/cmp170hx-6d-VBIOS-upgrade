@@ -10,7 +10,7 @@ need_root
 MODE="${1:-}"
 case "${MODE}" in
     --mclk)
-        sed -i -E 's/;RmHbmPllNdiv=[0-9]+//' "${CONF}" 2>/dev/null || true
+        sed -i -E 's/;RmHbmPllNdiv=[0-9]+//g' "${CONF}" 2>/dev/null || true
         ok "HBM NDIV override removed"
         ;;
     --vbios)

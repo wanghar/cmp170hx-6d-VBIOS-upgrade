@@ -2,7 +2,8 @@
 
 **English** | [简体中文](../zh-CN/07-verify.md)
 
-Check in order after reboot. `sudo bash scripts/99-verify.sh` runs all of them at once and prints the results.
+Check in order after reboot. `sudo bash scripts/99-verify.sh` runs all of them at once and prints the
+results for **every detected card** (identity, clocks, PLL lock count per GPU).Check in order after reboot. `sudo bash scripts/99-verify.sh` runs all of them at once and prints the results.
 
 ## A. Basic Identity
 

@@ -202,6 +202,23 @@ Then `sudo reboot`. **If Xorg does not come up**: `Ctrl+Alt+F3` for a text conso
 ---
 
 ## 10. Repository layout
+### Multiple cards
+
+Layers 1 and 2 are multi-GPU by design (the unlock patches resolve framebuffer geometry per device
+at runtime, and vix-loader takes one `pci=` scope per GPU). Layer 3 is written per GPU device and
+reads `RmHbmPllNdiv` through the per-device registry, so each card can carry its own NDIV.
+
+- Registry parameters are capped at **4094 bytes each** (patched module); every card needs its own
+  `pci=` scope inside the same value, e.g.
+  `pci=0000:02:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;RmHbmPllNdiv=64;pci=0000:03:00.0;...`
+- `scripts/04-install.sh` writes one scope per detected card, `scripts/06-set-mclk.sh` updates every
+  scope, and `scripts/99-verify.sh` plus the Gen2 retrain service loop over all cards.
+- **Not verified on a multi-card system.** Validate each card separately: its own VBIOS/power table
+  (the override payload must match that card's board configuration), its own NDIV stability, and
+  its own root port for Gen2.
+- Cards configured for 300 W need a power supply and airflow sized for the total draw.
+
+
 
 ```
 cmp170hx-6d-VBIOS-upgrade/

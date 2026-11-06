@@ -52,6 +52,10 @@ systemctl status cmp-pcie-gen2-retrain.service
 ```
 
 > Retraining is idempotent; even if the root port is already Gen2, writing again is harmless.
+> Retraining is idempotent; even if the root port is already Gen2, writing again is harmless.
+
+The installed script enumerates every CMP 170HX and retrains each card together with *its own* root
+port, so multi-card systems are handled in one pass.
 
 ## 5. Limitations
 

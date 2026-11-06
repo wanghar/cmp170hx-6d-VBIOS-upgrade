@@ -13,7 +13,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-BDF="$(gpu_bdf)"
+mapfile -t BDFS < <(gpu_bdfs)
+[[ ${#BDFS[@]} -gt 0 ]] || die "no GPU found"
 DRV="$(driver_version)"
 FW="$(fw_dir "${DRV}")"
 PAYLOAD_SIZE=0
@@ -43,12 +44,23 @@ printf '%s\n' "${DRV}"        > "${INSTALL_MOD_DIR}/driver_version"
 printf '%s\n' "merged-vbios-override" > "${INSTALL_MOD_DIR}/unlock_geometry"
 ok "modules -> ${INSTALL_MOD_DIR}"
 
-# --- registry ---
-DWORDS="pci=${BDF};RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=${PAYLOAD_SIZE}"
-[[ -n "${NDIV}" ]] && DWORDS="${DWORDS};RmHbmPllNdiv=${NDIV}"
+# --- registry (one pci= scope per GPU) ---
+DWORDS=""
+BINARY=""
+for b in "${BDFS[@]}"; do
+    DWORDS="${DWORDS}pci=${b};RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=${PAYLOAD_SIZE}"
+    [[ -n "${NDIV}" ]] && DWORDS="${DWORDS};RmHbmPllNdiv=${NDIV}"
+    DWORDS="${DWORDS};"
+    BINARY="${BINARY}pci=${b};RmLinuxVbiosOverrideImage=${DRV}/vbios-override/vbios.bin;"
+done
+DWORDS="${DWORDS%;}"
+BINARY="${BINARY%;}"
+(( ${#DWORDS} <= REGISTRY_MAX_BYTES )) || warn "NVreg_RegistryDwordsPerDevice is ${#DWORDS} bytes (> ${REGISTRY_MAX_BYTES})"
+(( ${#BINARY} <= REGISTRY_MAX_BYTES )) || warn "NVreg_RegistryBinaryFilePerDevice is ${#BINARY} bytes (> ${REGISTRY_MAX_BYTES})"
+log "GPUs: ${BDFS[*]} (${#BDFS[@]} found)"
 cat > "${CONF}" <<CONFEOF
 options nvidia NVreg_RegistryDwordsPerDevice="${DWORDS}"
-options nvidia NVreg_RegistryBinaryFilePerDevice="pci=${BDF};RmLinuxVbiosOverrideImage=${DRV}/vbios-override/vbios.bin"
+options nvidia NVreg_RegistryBinaryFilePerDevice="${BINARY}"
 CONFEOF
 ok "registry: ${CONF}"
 cat "${CONF}"

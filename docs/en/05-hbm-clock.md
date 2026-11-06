@@ -74,6 +74,11 @@ sudo dmesg | grep HBMPLL_OC | tail -3
 ```
 
 ## 5. NDIV selection (8 GB cards)
+With several cards the key must appear in every `pci=` scope; `scripts/06-set-mclk.sh` does that for
+you. Validate stability on each card separately: cards differ in binning and may need different NDIV
+values.
+
+
 
 | NDIV | Memory clock | Recommendation |
 |---|---|---|

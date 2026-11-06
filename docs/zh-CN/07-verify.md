@@ -2,7 +2,8 @@
 
 [English](../en/07-verify.md) | **简体中文**
 
-重启后按顺序检查。`sudo bash scripts/99-verify.sh` 会一次性跑完并打印结果。
+重启后按顺序检查。`sudo bash scripts/99-verify.sh` 会一次性跑完并打印**每张检测到的卡**的结果
+（身份、时钟、每卡的 PLL 锁定数）。重启后按顺序检查。`sudo bash scripts/99-verify.sh` 会一次性跑完并打印结果。
 
 ## A. 基础身份
 

@@ -196,6 +196,22 @@ sudo bash scripts/98-rollback.sh --all
 ---
 
 ## 10. 目录结构
+### 多卡
+
+第 1、2 层本身就是多卡设计（解锁补丁按 device-id 在运行时决定显存几何；vix-loader 每张卡一个
+`pci=` 作用域）。第 3 层按 GPU 设备执行、通过 per-device 注册表读 `RmHbmPllNdiv`，所以每张卡
+可以有各自的 NDIV。
+
+- 每个注册表参数上限 **4094 字节**（打过补丁的模块）；每张卡都要在同一个值里拥有自己的
+  `pci=` 作用域，例如
+  `pci=0000:02:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;RmHbmPllNdiv=64;pci=0000:03:00.0;...`
+- `scripts/04-install.sh` 会为每张检测到的卡写一份作用域；`scripts/06-set-mclk.sh` 更新所有
+  作用域；`scripts/99-verify.sh` 与 Gen2 重训服务都遍历全部卡。
+- **多卡系统未实测。** 每张卡都要单独验证：自己的 VBIOS/功耗表（覆盖 payload 必须匹配该卡的
+  board configuration）、自己的 NDIV 稳定性、自己的根端口 Gen2。
+- 多卡都开 300 W 时，电源与风道要按总功耗准备。
+
+
 
 ```
 cmp170hx-6d-upgrade/

@@ -1,0 +1,7 @@
+work/
+*.ko
+*.o
+*.cmd
+*.tmp
+__pycache__/
+*.pyc

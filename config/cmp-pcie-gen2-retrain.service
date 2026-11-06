@@ -1,0 +1,12 @@
+[Unit]
+Description=CMP 170HX: retrain PCIe root port to Gen2
+After=multi-user.target display-manager.service
+ConditionPathExists=/dev/nvidia0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cmp-pcie-gen2-retrain.sh
+
+[Install]
+WantedBy=multi-user.target

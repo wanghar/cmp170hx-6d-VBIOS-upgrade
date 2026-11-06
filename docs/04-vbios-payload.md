@@ -1,0 +1,100 @@
+# 04 — 6D ROM → VBIOS 覆盖 payload
+
+## 1. payload 是什么
+
+vix-loader 的机制：驱动在 GSP 启动前把一段镜像交给固件，固件用它代替 EEPROM 里的
+VBIOS 初始化 GPU。**EEPROM 不写**。
+
+固件对镜像的要求（实测）：
+
+| 要求 | 说明 |
+|---|---|
+| 单链 legacy 镜像 | 一个 `55AA` + `PCIR`（code type 0），校验和为 0 |
+| 暂存大小 ≤ **512 KiB** | 暂存字节数 = payload 大小 − 0x5E00；超过则固件**静默回落** EEPROM VBIOS |
+| `RmLinuxVbiosOverrideSize` == 文件长度 | 驱动侧检查，不一致直接报错 |
+
+6D ROM（`268495.rom`，1044480 字节）是**双 bank**（bank2 在 0x60000 有镜像副本），
+不能整包喂进去。正确做法：**只取 bank1（0x0–0x60000，393216 字节）**。
+
+## 2. 生成 payload
+
+```bash
+sudo bash scripts/03-payload.sh /path/to/268495.rom
+# 等价于：
+python3 scripts/03-make-payload.py /path/to/268495.rom -o work/payload-300w.bin
+```
+
+生成器会：
+
+1. 校验 ROM 长度与 md5（可选，`--expect-md5`）
+2. 在 ROM 里找 legacy 镜像（`55AA` + `PCIR`），校验镜像 checksum
+3. 取镜像起始偏移到 bank 边界（0x60000）的内容作为 payload
+4. 校验 payload 能在镜像内找到合法单链 legacy 镜像
+5. 输出 `payload-300w.bin`、`SIZE=`、`sha256`
+
+实测典型值：
+
+```
+输入: 268495.rom  1044480 bytes
+镜像: legacy @0x000000  (PCIR code type 0, checksum ok)
+输出: payload-300w.bin  393216 bytes
+暂存: 393216 - 0x5E00 = 369152 bytes   (< 512 KiB ✓)
+sha256: 9eba96103d93fe902dfa7caf562512f61c2e8bc1c33a55e7bbd52f3da7642d8e
+```
+
+## 3. 安装 payload
+
+```bash
+sudo bash scripts/03-payload.sh /path/to/268495.rom --install
+```
+
+或手动：
+
+```bash
+sudo mkdir -p /lib/firmware/nvidia/615.71.09/vbios-override
+sudo cp work/payload-300w.bin /lib/firmware/nvidia/615.71.09/vbios-override/vbios.bin
+```
+
+## 4. registry 参数（per-device）
+
+`/etc/modprobe.d/90-cmp-vbios-override.conf`：
+
+```
+options nvidia NVreg_RegistryDwordsPerDevice="pci=0000:02:00.0;RmLinuxVbiosOverride=2;RmLinuxVbiosOverrideSize=393216;RmHbmPllNdiv=64"
+options nvidia NVreg_RegistryBinaryFilePerDevice="pci=0000:02:00.0;RmLinuxVbiosOverrideImage=615.71.09/vbios-override/vbios.bin"
+```
+
+- `RmLinuxVbiosOverride=2` 是必须的 mode 值（1 = 关闭，2 = 启用）
+- `RmLinuxVbiosOverrideSize` 必须等于文件字节数
+- `RmLinuxVbiosOverrideImage` 是相对 `/lib/firmware/nvidia/` 的路径
+- 多卡时用 `pci=...;pci=...` 重复键值
+
+## 5. 验证是否被接受
+
+驱动日志（host 侧，只证明**暂存**成功）：
+
+```
+NVRM: vbios_override: GPU 0000:02:00 selected: 369152 bytes from offset 0x5e00 staged for GSP
+```
+
+固件是否真的用了镜像，看 `nvidia-smi`：
+
+```bash
+nvidia-smi --query-gpu=vbios_version,power.max_limit,clocks.max.sm --format=csv
+# 92.00.6D.00.0A, 300.00 W, 1695 MHz   ← 接受
+# 92.00.67.00.01, 250.00 W, 1410 MHz   ← 拒绝（固件回落 EEPROM）
+```
+
+**失败排查**：
+
+| 症状 | 原因 | 处理 |
+|---|---|---|
+| `staged` 行有，但 VBIOS 仍是 67 | 固件拒绝（大小超限 / 镜像结构不对） | 减小 payload；确认是单链 legacy 镜像 |
+| 没有 `staged` 行 | 驱动侧校验失败 | 检查 `Size` == 文件长度、文件路径、`mode=2` |
+| `rejected override ... using stock VBIOS` | 版本/check 失败 | 确认驱动版本与镜像匹配、镜像 checksum 为 0 |
+
+## 6. 512 KiB 上限的实验证据
+
+`docs/09-experiment-log.md` 有完整表格：369152 ✓、373248 ✓、434688 ✓、499712 ✓、
+**524288 ✓**、541696 ✗、631296 ✗、762368 ✗、1020416 ✗ —— 拒绝只由大小决定，
+与内容无关。

@@ -1,0 +1,204 @@
+--- a/src/nvidia/src/kernel/gpu/gsp/kernel_gsp.c
++++ b/src/nvidia/src/kernel/gpu/gsp/kernel_gsp.c
+@@ -5522,6 +5522,9 @@
+             { 0x0000c840U, 0xffffffffU, "PJTAG_PLM" },
+             { 0x0000c848U, 0xffffffffU, "PJTAG_SEC_PLM" },
+             { 0x00820040U, 0x00000001U, "EN_SW_OVR" },
++            { 0x009a3c7cU, 0xffffffffU, "FBPA_PLL0" },
++            { 0x009a3c80U, 0xffffffffU, "FBPA_PLL1" },
++            { 0x009a3c84U, 0xffffffffU, "FBPA_PLL2" },
+         };
+ 
+         NvU32 wpr2Lo = GPU_REG_RD32(pGpu, 0x001fa824U);
+@@ -5530,7 +5533,7 @@
+                   "SEC2_DEBUG: saved WPR2 lo=0x%08x hi=0x%08x\n",
+                   wpr2Lo, wpr2Hi);
+ 
+-        for (plmIdx = 0; plmIdx < 13; plmIdx++)
++        for (plmIdx = 0; plmIdx < NV_ARRAY_ELEMENTS(plmTable); plmIdx++)
+         {
+             NvBool opened = NV_FALSE;
+             for (attempt = 0; attempt < 2 && !opened; attempt++)
+@@ -5602,6 +5605,128 @@
+                       devId);
+         }
+ 
++
++        //
++        // HBM2e memory clock via the FBPA PLL NDIV multiplier (clock = NDIV * 27 MHz).
++        // The stock NDIV is read out of the PLL, so this is VBIOS-agnostic; NDIV is
++        // taken from the per-device registry key RmHbmPllNdiv (30..80).
++        // Sequence: assert MEMCLK_CHANGE_ALERT -> HBM self-refresh -> PLL cycle per
++        // FBPA -> exit self-refresh -> DDLL calibration -> clear alert.
++        //
++        {
++            NvU32 ocNdiv = 0;
++            if (osReadRegistryDword(pGpu, "RmHbmPllNdiv", &ocNdiv) == NV_OK &&
++                ocNdiv >= 30U && ocNdiv <= 80U)
++            {
++                NvU32 fbpaIdx, pollIdx, fbpaCount = 0, failCount = 0;
++                NvU32 plm0, fbio0, curNdiv, base, cfgAddr, coeffAddr;
++                NvU32 origCfg, origCoeff, newCoeff, lockCfg;
++                NvU32 ddll0, calSt0 = 0, calSt1 = 0;
++
++                plm0 = GPU_REG_RD32(pGpu, 0x00903C7CU);
++                curNdiv = (GPU_REG_RD32(pGpu, 0x00903C98U) >> 8) & 0xFFU;
++                if ((plm0 & 0x10U) == 0U)
++                {
++                    NV_PRINTF(LEVEL_ERROR,
++                              "HBMPLL_OC: aborted, PLM=0x%08x (bit4 closed)\n", plm0);
++                }
++                else
++                {
++                    NV_PRINTF(LEVEL_ERROR,
++                              "HBMPLL_OC: start NDIV %u->%u (%u->%u MHz) "
++                              "devid=0x%04x vbios=%s PLM=0x%08x\n",
++                              curNdiv, ocNdiv, 27U * curNdiv, 27U * ocNdiv,
++                              devId, pKernelGsp->vbiosVersionStr, plm0);
++
++                    // 1. Assert MEMCLK_CHANGE_ALERT (FBIO broadcast bit 31)
++                    fbio0 = GPU_REG_RD32(pGpu, 0x009A0590U);
++                    GPU_REG_WR32(pGpu, 0x009A0590U, fbio0 | 0x80000000U);
++
++                    // 2. Enter HBM self-refresh
++                    GPU_REG_WR32(pGpu, 0x009A031CU, 0x00000001U);
++                    osDelay(5);
++
++                    // 3. PLL cycle on each active FBPA
++                    for (fbpaIdx = 0; fbpaIdx < 12; fbpaIdx++)
++                    {
++                        base = 0x900000U + fbpaIdx * 0x4000U;
++                        cfgAddr   = base + 0x3C90U;
++                        coeffAddr = base + 0x3C98U;
++
++                        origCfg   = GPU_REG_RD32(pGpu, cfgAddr);
++                        origCoeff = GPU_REG_RD32(pGpu, coeffAddr);
++
++                        if (origCfg == 0U || origCoeff == 0U ||
++                            (origCfg & 0xFFF00000U) == 0xBAD00000U)
++                            continue;
++
++                        fbpaCount++;
++
++                        GPU_REG_WR32(pGpu, cfgAddr, origCfg & ~0x09U);
++                        osDelay(2);
++
++                        newCoeff = (origCoeff & ~0xFF00U) | ((ocNdiv & 0xFFU) << 8);
++                        GPU_REG_WR32(pGpu, coeffAddr, newCoeff);
++
++                        GPU_REG_WR32(pGpu, cfgAddr, (origCfg | 0x09U) & ~0x20U);
++
++                        lockCfg = 0U;
++                        for (pollIdx = 0; pollIdx < 200; pollIdx++)
++                        {
++                            osDelay(1);
++                            lockCfg = GPU_REG_RD32(pGpu, cfgAddr);
++                            if (lockCfg & 0x20U)
++                                break;
++                        }
++
++                        if (!(lockCfg & 0x20U))
++                        {
++                            NV_PRINTF(LEVEL_ERROR,
++                                      "HBMPLL_OC: FBPA%u PLL lock timeout\n", fbpaIdx);
++                            failCount++;
++                            continue;
++                        }
++
++                        GPU_REG_WR32(pGpu, cfgAddr, lockCfg & ~0x1000U);
++                    }
++
++                    // 4. Exit self-refresh
++                    GPU_REG_WR32(pGpu, 0x009A031CU, 0x00000000U);
++                    osDelay(10);
++
++                    // 5. DDLL calibration
++                    ddll0 = GPU_REG_RD32(pGpu, 0x009A11DCU);
++                    GPU_REG_WR32(pGpu, 0x009A11DCU, ddll0 | 0x40U);
++                    osDelay(10);
++                    for (pollIdx = 0; pollIdx < 100; pollIdx++)
++                    {
++                        osDelay(1);
++                        calSt0 = GPU_REG_RD32(pGpu, 0x009A0674U);
++                        calSt1 = GPU_REG_RD32(pGpu, 0x009A0678U);
++                    }
++                    GPU_REG_WR32(pGpu, 0x009A11DCU, ddll0 & ~0x40U);
++                    NV_PRINTF(LEVEL_ERROR,
++                              "HBMPLL_OC: DDLL cal status 0x%08x 0x%08x\n",
++                              calSt0, calSt1);
++
++                    // 6. Clear MEMCLK_CHANGE_ALERT
++                    GPU_REG_WR32(pGpu, 0x009A0590U,
++                                 GPU_REG_RD32(pGpu, 0x009A0590U) & ~0x80000000U);
++
++                    if (fbpaCount == 0U)
++                        NV_PRINTF(LEVEL_ERROR, "HBMPLL_OC: no active FBPAs found\n");
++                    else if (failCount > 0U)
++                        NV_PRINTF(LEVEL_ERROR,
++                                  "HBMPLL_OC: %u/%u FBPAs failed to lock\n",
++                                  failCount, fbpaCount);
++                    else
++                        NV_PRINTF(LEVEL_ERROR,
++                                  "HBMPLL_OC: done, %u FBPAs at NDIV=%u (%u MHz)\n",
++                                  fbpaCount, ocNdiv, 27U * ocNdiv);
++                }
++            }
++        }
++
+         {
+             NvU32 gpc;
+             NvU32 gpcDisable = GPU_REG_RD32(pGpu, 0x00820350U);
+@@ -6261,6 +6386,53 @@
+ 
+     NV_CHECK_OK_OR_GOTO(status, LEVEL_ERROR, kgspStartLogPolling(pGpu, pKernelGsp), done);
+ 
++    //
++    // Post-GSP HBM PLL NDIV path: multicast COEFF write to every FBPA plus a PRI
++    // fence flush, then poll FBPA0 PLL_CFG for lock. The pre-GSP path writes the
++    // PLLs through the private register interface before GSP-RM initialises the
++    // memory subsystem; this one runs afterwards and forces the writes through.
++    //
++    if (_kgspSec2PostblTimingEnabled(pGpu))
++    {
++        NvU32 ocNdiv = 0;
++        if (osReadRegistryDword(pGpu, "RmHbmPllNdiv", &ocNdiv) == NV_OK &&
++            ocNdiv >= 30U && ocNdiv <= 80U)
++        {
++            NvU32 coeff_pre = GPU_REG_RD32(pGpu, 0x00903C98U);
++            NvU32 plm_pre   = GPU_REG_RD32(pGpu, 0x00903C7CU);
++            NvU32 newCoeff, cfg = 0U, i;
++
++            if (coeff_pre == 0U || (coeff_pre & 0xFFF00000U) == 0xBAD00000U)
++                newCoeff = (1U << 16) | ((ocNdiv & 0xFFU) << 8) | 1U;
++            else
++                newCoeff = (coeff_pre & ~0xFF00U) | ((ocNdiv & 0xFFU) << 8);
++
++            NV_PRINTF(LEVEL_ERROR,
++                      "HBMPLL_OC: post-GSP PRE: COEFF=0x%08x(NDIV=%u) PLM=0x%08x "
++                      "devid=0x%04x vbios=%s newCOEFF=0x%08x\n",
++                      coeff_pre, (coeff_pre >> 8) & 0xFFU, plm_pre,
++                      pGpu->idInfo.PCIDeviceID >> 16, pKernelGsp->vbiosVersionStr, newCoeff);
++
++            GPU_REG_WR32(pGpu, 0x0098BC98U, newCoeff);
++            GPU_REG_WR32(pGpu, 0x001211FCU, 0x0U);
++            for (i = 0; i < 500U; i++)
++                (void)GPU_REG_RD32(pGpu, 0x00903C90U);
++
++            for (i = 0; i < 200000U; i++)
++            {
++                cfg = GPU_REG_RD32(pGpu, 0x00903C90U);
++                if (cfg & 0x20U)
++                    break;
++            }
++
++            NV_PRINTF(LEVEL_ERROR,
++                      "HBMPLL_OC: post-GSP POST: COEFF=0x%08x(NDIV=%u) CFG=0x%08x lock=%u iter=%u\n",
++                      GPU_REG_RD32(pGpu, 0x00903C98U),
++                      (GPU_REG_RD32(pGpu, 0x00903C98U) >> 8) & 0xFFU,
++                      cfg, (cfg >> 5) & 1U, i);
++        }
++    }
++
+     // schedule the callback for periodic GSP health check when enabled via regkey
+     if (pKernelGsp->gspPeriodicHealthcheck == NV_REG_STR_RM_GSP_PERIODIC_HEALTHCHECK_ENABLE)
+     {

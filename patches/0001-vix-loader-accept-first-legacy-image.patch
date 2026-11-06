@@ -1,0 +1,23 @@
+--- a/src/nvidia/inc/kernel/gpu/gsp/vbios_override_image.h
++++ b/src/nvidia/inc/kernel/gpu/gsp/vbios_override_image.h
+@@ -48,11 +48,16 @@
+             return NV_FALSE;
+         for (j = 0; j < length; j++)
+             checksum = (NvU8)(checksum + image[off + j]);
+-        if (checksum != 0 || ++found != 1)
+-            return NV_FALSE;
+-        selected = off;
++        if (checksum != 0)
++            continue;
++        /* Accept the first valid legacy image of this GPU; ignore mirrored
++         * copies further down the dump (dual-bank ROMs repeat the image at
++         * +0x60000).  Mirror integrity then stays intact for the firmware. */
++        if (found == 0)
++            selected = off;
++        found++;
+     }
+-    if (found != 1)
++    if (found == 0)
+         return NV_FALSE;
+     *offset = selected;
+     return NV_TRUE;

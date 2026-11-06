@@ -15,7 +15,7 @@ CMPUNLOCKER_COMMIT="${CMPUNLOCKER_COMMIT:-17535a0}"
 VIX_COMMIT="${VIX_COMMIT:-7bf011e3a6100fd6b470917256f73cc18bda0586}"
 INSTALL_MOD_DIR="/lib/modules/${KVER}/updates/cmpunlocker"
 CONF="/etc/modprobe.d/90-cmp-vbios-override.conf"
-RETRAIN_BIN="/usr/local/bin/cmp-pcie-gen2-retrain.sh"
+RETRAIN_BIN="/usr/local/sbin/cmp-pcie-gen2-retrain.sh"
 RETRAIN_UNIT="/etc/systemd/system/cmp-pcie-gen2-retrain.service"
 
 log()  { printf '\033[36m[INFO]\033[0m %s\n' "$*"; }
